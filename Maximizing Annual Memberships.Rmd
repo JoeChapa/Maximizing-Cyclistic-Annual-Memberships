@@ -1,0 +1,774 @@
+---
+title: "Maximizing Annual Memberships: Understanding the Differences between Casual Riders and Annual Members in Cyclistic Bike-Share Program"
+author: "Joe Chapa"
+date: "2023-03-30"
+output:
+  html_document:
+    keep_md: true
+---
+
+`options(warn=2, error=recover)`
+
+# Introduction
+
+The goal of this case study is to offer a thorough analysis of Cyclistic, a fictional bike-share provider in Chicago. This project's main objectives are to examine the usage differences between annual members and casual riders and to identify the variables that lead casual riders to switch to annual membership. To achieve this goal, we will use the six stages of the data analysis process --- "ask, prepare, process, analyze, share, and act".
+
+# Ask
+
+The Cyclistic marketing analytics team aims to identify differences in usage patterns between annual members and casual riders, and convert the latter into profitable annual subscribers. As a junior data analyst on the team, my task is to analyze bike usage patterns and offer data-driven recommendations to the marketing director and executive team. This project is crucial to Cyclistic's growth and competitiveness in the bike-share market.
+
+# Prepare
+
+To complete this objective we used RStudio to import, clean, analyze and visualize the data. We analyzed Cyclistic trip data from the past 12 months (April 2022 - March 2023). The data, consisting of 12 CSV files, includes variables such as start and end times, station locations, bike type, and customer type. We obtained the data from <a href="https://divvy-tripdata.s3.amazonaws.com/index.html">the Divvy Tripdata website</a>, which is a reliable source, and downloaded it to the directory "\~/Google Capstone Project/csv". The data can be trusted as it is accurate, complete, and unbiased. We accessed it through a <a href="https://ride.divvybikes.com/data-license-agreement">licensed agreement</a> with Lyft Bikes and Scooters, LLC, ensuring that licensing, privacy, security, and accessibility concerns were addressed. We verified the integrity of the data by checking for consistency and minimal missing values.
+
+The Cyclistic trip data allows us to identify differences in customer behavior and will help us answer our research question. However, the size of the data is a challenge as it significantly increases memory usage in RStudio. Based on our analysis, we recommend using a machine with at least 16 GB of RAM to efficiently replicate our results. A detailed data dictionary is provided below.
+
+## Data Dictionary
+
+-   **ride_id**: Unique id assigned to a single ride
+-   **rideable_type**: Type of bike used for the ride
+    -   classic_bike
+    -   docked_bike
+    -   electric_bike
+-   **started_at**: Date and time the ride was started
+-   **ended_at**: Date and time the ride was terminated
+-   **start_station_name**: Name of the station where the ride started
+-   **start_station_id**:Unique id of the station where the ride started
+-   **end_station_name**: Name of the station where the ride ended
+-   **end_station_id**: Unique id of the station where the ride ended
+-   **start_lat**: Latitude value of where the starting station is located
+-   **start_lng**: Longitude value of where the starting station is located
+-   **end_lat**: Latitude value of where the ending station is located
+-   **end_lng**: Longitude value of where the ending station is located
+-   **member_casual**:
+    -   casual: Customer of this ride purchased a 'single-ride' or 'full-day' pass
+    -   member: Customer of this ride has purchased an annual membership
+
+## File descriptions
+
+```{r file_names, echo=FALSE}
+path <- "~\\Google Capstone Project\\csv\\"
+file_list <- list.files(path)
+file_list
+```
+
+## Packages Utilized
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(forcats)
+library(geosphere)
+library(knitr)
+library(tidytext)
+```
+
+## Importing the Data
+
+After downloading the data, we observed that one of the files had a different naming scheme from the others. However, all files started with the pattern 'YYYYMM-divvy-...'. To streamline our code and avoid repetition, we decided to use a for-loop to import and rename the data, utilizing the naming pattern 
+
+*Load CSVs*
+
+```{r import_csv}
+months <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+for (file_name in file_list) {
+  # extract month and year from file_name
+  month <- substr(file_name, 5, 6)
+  year <- substr(file_name, 3, 4)
+  
+  # create variables
+  var_name <- paste(months[as.numeric(month)], year, "_tripdata", sep = "")
+  assign(var_name, read.csv(paste(path, file_name, sep = "")))
+  
+  #OPTIONAL: print out a statement to inform the user the file has been imported
+  print(paste(var_name, "has been imported"))
+}
+```
+
+## Verify Data Integrity
+
+Before merging our 12 CSV files into a single dataset, we ensured all files shared consistent column names and data types. To maintain the readability of this report, we have included output for only 1 out of 12 CSVs. Nevertheless, it is important to note that this test was applied to all 12 CSV files.
+
+*Verify matching data types*
+
+```{r verify_matching_data_types}
+#list all objects in the environment
+obj_list <- ls()
+
+#filter the data frames from the object list
+df_list <- obj_list[sapply(obj_list, function(x) is.data.frame(get(x)))]
+df_list
+
+for (df_name in df_list[1]){
+  cat(paste0("Information for ", df_name, ":\n"))
+  glimpse(df_name)
+}
+```
+
+*Combine data*
+
+```{r merge_data}
+#Combine data
+all_trips <- bind_rows(mget(df_list))
+glimpse(all_trips)
+rm(list = df_list)
+```
+
+We have over almost 6 million entries and 13 features to work with. With our data combined we performed a check to ensure no duplicates existed.
+
+*Check for duplicate entries*
+
+```{r integrity_duplicate}
+duplicated_entries <- sum(duplicated(all_trips))
+duplicated_entries
+```
+
+Now that we confirmed no duplicates were present, we now can check for each column for missing values.
+
+*Check for missing values*
+
+```{r integrity_is.na}
+na_values <- colSums(is.na(all_trips))
+na_values
+```
+
+We identified that the `end_lat` and `end_lng` columns contained missing values. A note has been made and will be address in the *Process* phase. We then proceeded to check if our dataset contained empty strings.
+
+*Check for empty strings*
+
+```{r integrity_empty_string}
+empty_values <- all_trips %>%
+  summarise_all(~sum(. %in% c("", " ")))
+empty_values
+```
+
+We discovered empty strings in `start_station_name`, `start_station_id`, `end_station_name`, and `end_station_id` columns. Since `end_lat` and `end_lng` columns have numeric data and not string data, the missing values appear as `NA` in these columns. In addition to checking for missing and empty values, its important we check to ensure that our data types are appropriate for our analysis.
+
+*Confirm valid data-typing*
+
+```{r integrity_data_types}
+str(all_trips)
+```
+
+Upon reviewing the output, it was discovered that the data type for `member_casual` was character instead of factor. Furthermore, `started_at` and `ended_at` were observed to be in character format instead of date/time. These issues will be addressed during the *Process* phase.
+
+*Summary*
+
+Based on our initial inspection of the data, we did not identify any duplicate entries. We did observe that several columns contain missing values, namely `end_lat`, `end_lng`, `start_station_id`, `start_station_name`, `end_station_id`, and `end_station_name.` Furthermore, we noted data type issues for `started_at`, `ended_at`, and `member_casual`.
+
+We ensured the accuracy and completeness of our data by verifying its integrity. We started by merging our data into a single data frame. Then proceed to investigate potential issues such as missing values, empty strings, data types, and duplicate entries. By performing these checks, we can be confident that our analysis is based on data that is accurate and reliable data.
+
+# Process
+
+Our next step is to clean and transform Cyclistic trip data with the goal of preparing it for analysis. We'll tackle issues that were identified in the previous step, like inconsistent data types and missing values, to improve data quality. This process includes three main phases: data cleaning, data type conversion, and data transformation. We'll dive into the specifics of each sub-step to refine our data for analysis.
+
+## Cleaning the data
+
+During the *Prepare* step, we discovered missing values in several columns including `end_lat`, `end_lng`, `start_station_id`, `start_station_name`, `end_station_id`, and `end_station_name.` We will handle these missing values in two steps: handling NA values in `end_lat`, `end_lng`, and handling missing string values in `start_station_id`, `start_station_name`, `end_station_id`, and `end_station_name.`
+
+### 1) Handling NA Values
+
+To address the issue of missing `end_lat` and `end_lng` values, we will first check whether we can fill in these values using the `end_station_id` or `end_station_name` columns. We filtered the data to only include entries where `end_lat`/`end_lng` are missing, but `end_station_id`/`end_station_name` are present.
+
+*Check for end_lat/end_lng values*
+
+```{r check_end_station_data}
+all_trips %>%
+  filter(is.na(end_lat) | is.na(end_lng)) %>%
+  filter(end_station_id != "" | end_station_name != "")
+```
+
+Unfortunately, since the `end_station_id` and `end_station_name` values are also missing, we cannot impute the `end_lat` and `end_lng` values for those entries. Thus, we have to remove them from our data set.
+
+*Omit NA values*
+
+```{r na.omit}
+all_trips_v2 <- na.omit(all_trips)
+```
+
+### 2) Handling Empty String Values
+
+During the Prepare step, we identified that the columns `start_station_id`, `start_station_name`, `end_station_id`, and `end_station_name` contain empty strings. To resolve this, we implemented a two-step approach. First, we created a dataset called `station_data` that included the `latitude`, `longitude`, `station_id`, and `station_name` for both the start and end stations. Then, we used `left_join` to match the missing `station_name` and `station_id` based on `latitude` and `longitude` to our `all_trips` dataset. For reference, we take note of how many values are missing before our attempt to fill the data
+
+*Missing data*
+
+```{r before_join_missing_values, include=FALSE}
+before_join <- all_trips_v2 %>%
+  summarise(across(start_station_name:end_station_id, ~sum(. %in% c("", " "))))
+```
+
+To create `station_data` we will use `bind_rows` to combine the following start and end station information; `station_id`, `station_name`, `lat` and `lng.` We then sort the dataset by `lat` and `lng.`
+
+*Create station dataset*
+
+```{r station_data, cache = TRUE}
+#Create station data set
+station_data <- all_trips_v2 %>%
+  select(start_station_id, start_station_name, start_lat, start_lng) %>%
+  bind_rows(all_trips_v2 %>% #row_bind end_station information to be thorough
+              select(start_station_id = end_station_id, 
+                     start_station_name = end_station_name, 
+                     start_lat = end_lat, 
+                     start_lng = end_lng)) %>% 
+  arrange(start_lat, start_lng, desc(start_station_name)) %>% #desc(start_station_name) to prioritize non-empty values when using first()
+  group_by(start_lat, start_lng) %>%
+  summarize(start_station_id = first(start_station_id), 
+            start_station_name = first(start_station_name), .groups = "drop") %>%
+  ungroup()
+```
+
+```{r station_data_example, echo=FALSE}
+all_trips_v2 %>%
+  select(start_station_id, start_station_name, start_lat, start_lng) %>%
+  filter(start_station_name == "Hegewisch Metra Station") %>%
+  sample_n(5)
+```
+
+We now have a data set with every unique latitude and longitude value for every station. These values can be utilized to complete the missing `station_id` and `station_name` in our original `all_trips` dataset. We will use two `left_join` functions to combine the data. The first join will fill the `start_station_id` and `start_station_name` columns. The second join will fill the `end_station_id` and `end_station_name` columns.
+
+*First join - Fill Start Station ID/Name*
+
+```{r first_join, cache = TRUE}
+all_trips_v3 <- all_trips_v2 %>% #fill start_station_id, start_station_name
+  left_join(station_data, by=c("start_lat", "start_lng"), suffix = c("","_dup")) %>%
+  mutate(start_station_id = ifelse(start_station_id_dup == "", "", start_station_id_dup), 
+         start_station_name = ifelse(start_station_name_dup == "", "", start_station_name_dup)) %>%
+  select(-c(start_station_id_dup, start_station_name_dup))
+```
+
+*Second join - Fill End Station ID/Name*
+
+```{r second_join, cache = TRUE}
+#rename so we can repeat with end_stations
+station_data <- station_data %>%
+  rename(end_lat = start_lat, end_lng = start_lng, end_station_id = start_station_id, end_station_name = start_station_name) 
+
+all_trips_v3 <- all_trips_v3 %>% #fill end_station_id, end_station_name - 5,829,084
+  left_join(station_data, by=c("end_lat", "end_lng"), suffix = c("","_dup")) %>%
+  mutate(end_station_id = ifelse(end_station_id_dup == "", "", end_station_id_dup), 
+         end_station_name = ifelse(end_station_name_dup == "", "", end_station_name_dup)) %>%
+  select(-c(end_station_id_dup, end_station_name_dup))
+```
+
+*Values Filled*
+
+```{r after_join_missing_values, include=FALSE, cache = TRUE}
+after_join <- all_trips_v3 %>%
+  summarise(across(start_station_name:end_station_id, ~sum(. %in% c("", " "))))
+
+total_filled_percentage = (before_join - after_join)/nrow(all_trips_v3)*100
+
+total_filled_percentage %>%
+  mutate(across(start_station_name:end_station_id, ~paste0(round(., 2), "%")))
+```
+
+With this technique, we were able to recover some of our lost data, preventing it from being permanently lost. Now we can calculate how much of the remaining data is still missing.
+
+*Calculate missing values*
+
+```{r calc_remaining_missing}
+all_trips_v3_missing <- all_trips_v3 %>% 
+  filter(start_station_name == "" | start_station_id =="" | end_station_name == "" | end_station_id == "")
+
+#calculate how much is still missing
+missing_values = round(nrow(all_trips_v3_missing)/nrow(all_trips_v3)*100, 1)
+missing_values
+```
+
+While it is true that `r paste(missing_values, "%", sep="")` of missing data is a notable amount, our data set contains nearly 6 million observations. We have a considerable amount of data for our analysis. Therefore, we will exclude the empty strings from our analysis.
+
+*Remove empty strings*
+
+```{r remove_empty_strings}
+all_trips_v4 <- all_trips_v3 %>%
+  filter(start_station_name != "", start_station_id !="", end_station_name != "", end_station_id != "") #850,550)
+```
+
+```{r empty_string check, include=FALSE}
+any(is.na(all_trips_v4) | all_trips_v4 == "")#returns TRUE if NA/empty strings are present
+
+all_trips_v4 %>%
+  summarise_all(~sum(. %in% c("", " ")))
+```
+
+*Summary*
+
+During the cleaning phase of the analysis, we addressed missing data issues in the dataset. Specifically, we dealt with missing values by either removing them or filling them in with appropriate values. These steps have helped us to improve the quality and integrity of our data and lay a solid foundation for further analysis.
+
+## Data Type Converstion
+
+Recall that we had typing issues earlier in our data cleaning process. These typing issues could lead to inconsistencies in our data analysis and hinder our ability to draw accurate conclusions. To address this issue, we can use data type conversion to ensure that each variable in our dataset has the correct data type.
+
+*Correct data-typings*
+
+```{r correct_typings, cache = TRUE}
+all_trips_v4 <- all_trips_v4 %>%
+  mutate(
+    rideable_type = factor(rideable_type),
+    member_casual = factor(member_casual), 
+    started_at = as.POSIXct(started_at, format = "%Y-%m-%d %H:%M:%S"),
+         ended_at = as.POSIXct(ended_at, format = "%Y-%m-%d %H:%M:%S"))
+summary(all_trips_v4[c("rideable_type", "member_casual", "started_at", "ended_at")])
+```
+
+Now that we have corrected our typings, we can move onto transforming the data to gain deeper insights.
+
+## Transform the data
+
+In order to gain more meaningful insights from our data, we can perform some transformations on it. First, we can utilize the date/time information contained within the `started_at` and `ended_at` columns to calculate the length of each ride in minutes. Furthermore, we can use the `started_at` column to create a new categorical column, `started_at_hour`, which classifies each ride based on the hour it started. Additionally, we can extract the month, day, year, and day of the week from `started_at.` Lastly, we can use `start_lat`, `start_lng`, `end_lat`, `end_lng` as well as the `geosphere` package to calculate the distance between the two stations.
+
+*Calculate ride_length*
+
+```{r transform_ride_length, cache = TRUE}
+all_trips_v5 <- all_trips_v4 %>%
+  mutate(ride_length_minutes = as.numeric(difftime(ended_at, started_at, units = "secs"))/60)
+```
+
+*Infer Date Information*
+
+```{r transform_dates, cache = TRUE}
+all_trips_v5 <- all_trips_v5 %>%
+  mutate(date = as.Date(started_at),
+         month = as.numeric(format(date, "%m")),
+         day = as.numeric(format(date, "%d")),
+         year = as.numeric(format(date, "%Y")),
+         day_of_week = factor(wday(started_at, label = TRUE), levels = c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")))
+```
+
+*Append Hour of Day*
+
+```{r transform_started_at_hour , cache = TRUE}
+# Define time intervals
+all_trips_v5 <- all_trips_v5 %>%
+  mutate(started_at_hour = hour(started_at))
+```
+
+*Calculate Distance Between Stations*
+
+```{r transform_distance, cache = TRUE}
+m_to_miles_converstion_rate = 0.000621371
+
+all_trips_v5 <- all_trips_v5 %>%
+  mutate(ride_distance_miles = distHaversine(
+    p1 = cbind(start_lng, start_lat),
+    p2 = cbind(end_lng, end_lat)
+  ) * m_to_miles_converstion_rate)
+
+
+all_trips_v5 %>%
+  sample_n(15)
+```
+
+Now that we have cleaned and transformed our data, we need to perform a check to ensure it is ready for the Analyze step.
+
+*Verify readiness*
+
+```{r Final_check}
+summary(all_trips_v5)
+#We notice that ride_length has some negative values. 
+#We learn that these are because quality assurance was being performed
+#These should be omit. Since we are removing data we will create a new data frame
+```
+
+Upon reviewing the summary, we noticed negative values and an abnormally high maximum value for `ride_length_minutes.` Additionally, we observed that there was an occurrence of "0" for `end_lat` and `end_lng`, which is not consistent with the expected values for the city of Chicago. Moreover, `ride_distance_miles` also had a remarkably high maximum value. Lastly, we observe that rideable_type has an unusually low value of 'docked_bike'. To better understand these discrepancies, further investigation is necessary.
+
+### Investigation
+
+#### 1) rideable_type
+
+After further research into this matter we discovered that 'docked_bike' is an outdated value for 'classic_bike'. We will make this adjustment and move onward.
+
+```{r convert_docked_to_classic}
+all_trips_v5 <- all_trips_v5 %>%
+  mutate(rideable_type = fct_recode(rideable_type, "classic_bike" = "docked_bike"))
+
+summary(all_trips_v5["rideable_type"])
+```
+
+#### 2) end_lat and end_lng
+
+```{r identify_ride_length_minutes_issue, echo=FALSE}
+#find problem
+all_trips_v5 %>%
+  select(c(end_station_id, end_station_name, end_lat, end_lng)) %>%
+  filter(end_station_id == "chargingstx07")
+```
+
+Upon inspection of the data, we discovered that the `0` values for `end_lat` and `end_lng` were specifically associated with `end_station_id` equaling "chargingstx07." Although we are uncertain how this occurred, we noticed that `chargingstx07` does possess some values for `end_lat` and `end_lng.` To remedy the issue, we can compute the average of the existing `end_lat` and `end_lng` values and use them to fill in the `0` values. However, we must also account for the fact that `end_lat` and `end_lng` are used to compute `ride_length_minutes.` Thus, we need to adjust the `ride_length_minutes` for the modified values.
+
+```{r fill_zero_values, cache = TRUE}
+#create values to fill
+chargingstx07 <-  all_trips_v5 %>%
+  filter(end_station_id == "chargingstx07" & end_lat != 0 & end_lng != 0 )
+
+chargingstx07_lat_mean = mean(chargingstx07$end_lat)
+chargingstx07_lng_mean = mean(chargingstx07$end_lng)
+
+#fill the 0 values
+all_trips_v6 <- all_trips_v5 %>%
+    mutate(end_lat = if_else(end_lat == 0, chargingstx07_lat_mean, end_lat),
+           end_lng = if_else(end_lng == 0, chargingstx07_lng_mean, end_lng))
+
+#check if end_lat/end_lng changed from all_trips_v5 to minimize re-calculations
+all_trips_v6 <- all_trips_v6 %>%
+  mutate(ride_distance_miles = 
+           if_else(end_lat != all_trips_v5$end_lat | end_lng != all_trips_v5$end_lng,
+                   distHaversine(p1 = cbind(start_lng, start_lat),p2 = cbind(end_lng, end_lat)) * m_to_miles_converstion_rate,
+                                  ride_distance_miles))
+
+summary(all_trips_v6[c("end_lat", "end_lng")])
+```
+
+After identifying the presence of `0` values in `end_lat` and `end_lng` when `end_station_id` was equal to "chargingstx07", we used the average of the existing non-zero values to fill in the `0` values. This resolved the issue and we now have complete data for these variables. However, we will continue to investigate the issue with `ride_length_minutes` and work towards finding a solution.
+
+#### 3) ride_length_minutes
+
+##### A) Negative Values
+
+```{r sample_negative_ride_length_minutes, include=FALSE}
+all_trips_v6 %>%
+  select(c(start_station_id, start_station_name, end_station_id, end_station_name, ride_length_minutes)) %>%
+  filter(ride_length_minutes < 0 & start_station_id == "Hubbard Bike-checking (LBS-WH-TEST)") %>%
+  bind_rows(all_trips_v6 %>%
+              select(c(start_station_id, start_station_name, end_station_id, end_station_name, ride_length_minutes)) %>%
+              filter( end_station_id == "Hubbard Bike-checking (LBS-WH-TEST)") %>%
+              sample_n(3)
+            ) %>%
+  bind_rows(all_trips_v6 %>%
+              select(c(start_station_id, start_station_name, end_station_id, end_station_name, ride_length_minutes)) %>%
+              filter(start_station_id == "Hubbard Bike-checking (LBS-WH-TEST)") %>%
+              sample_n(3)
+            )
+```
+
+After examining `ride_length_minutes`, we noticed that the phrase "Hubbard Bike-checking (LBS-WH-TEST)" appears in both the `start_station_id` and `end_station_id` columns for certain entries. Further research was done to discover that LBS and WH are shorthand for "Local Bike Store" and "Warehouse". We believe that these entries correspond to bikes that were taken to a warehouse for inspection or testing, which caused inconsistencies in the `started_at` and `ended_at` times resulting in negative values for `ride_lengths_seconds.` Therefore, to ensure the accuracy of our analysis, we will exclude this data from our data set.
+
+```{r remove_negatives}
+inspection_site = "Hubbard Bike-checking (LBS-WH-TEST)"
+all_trips_v6 <- all_trips_v6 %>%
+  filter(start_station_id != inspection_site, end_station_id != inspection_site, ride_length_minutes > 0)
+
+all_trips_v6 %>%
+  filter(is.na(ride_length_minutes))
+
+all_trips_v6 %>%
+  filter(ride_length_minutes<0)
+```
+
+##### B) Outlier Values
+
+After examining the ride_length_minutes variable, we observed a significant outlier in the maximum value. To investigate further, we examined a sample of the outliers in terms of days.
+
+*Sample of Outliers (in days)*
+
+```{r ride_length_day_outlier, echo=FALSE}
+outliers_ride_length <- boxplot(all_trips_v6$ride_length_minutes, plot = FALSE)$out
+
+sort(round(outliers_ride_length/60/24,2), decreasing=TRUE)[1:50]
+
+all_trips_v6 <- all_trips_v6 %>%
+  filter(ride_length_minutes<32035)
+```
+
+With values ranging from one day to just over a week we find one observation with a ride length of over 22 days. As this seems unreasonable was removed.
+
+```{r check_ride_length_dim, include=FALSE}
+max(all_trips_v6$ride_length_minutes)
+dim(all_trips_v6) 
+```
+
+```{r verify_omitted_outliers}
+summary(all_trips_v6[c("ride_length_minutes", "ride_distance_miles")])
+```
+
+By removing the outlier for ride_length_minutes, we were also able to resolve the issue with the ride_distance_miles outlier. Therefore, we have completed the *Process* phase of our analysis.
+
+*Summary*
+
+After completing the cleaning phase of our analysis, we have successfully addressed various data quality issues such as missing values, inconsistent data types, and duplicated records. We have also enriched our data by adding location information for each station. These steps have allowed us to create a more reliable and accurate dataset that is now ready for analysis. With the data cleaned and prepared, we can now move on to the exploratory analysis phase and begin to extract meaningful insights from the data.
+
+# Analyze
+
+After cleaning and transforming the data, we begin the *Analyze* phase to explore the data and extract valuable insights that will aid us in achieving our business objective. As a reminder, our business task is to figure out how annual members and casual riders use Cyclistic bikes differently with the aim to convert casual riders into annual members. To accomplish this, we will be analyzing our cleaned and transformed data set to identify patterns, trends, and insights that will help us understand the behavior of our riders. To do this, we will analyze factors such as ride frequency, duration, time of day, day of the week, and seasonality.
+
+To begin, we will compare the number of rides taken by members and casual users.
+
+```{r table_rideable_type}
+member_casual_table <- table(all_trips_v6$member_casual)
+member_casual_prop <- prop.table(member_casual_table)*100
+member_casual_prop
+```
+
+In terms of the total number of rides, about `r paste(round(member_casual_prop["casual"], 1), "%", sep="")` were by casual customers whereas `r paste(round(member_casual_prop["member"], 1), "%", sep="")` of rides were by member customers. Let's dive deeper into the data and compute some summary statistics.
+
+## Ride Duration Summary
+
+```{r summarise_ride_length_by_member_casual, warning=FALSE}
+#Let's take a look at these values by comparing members vs casual users
+all_trips_v6 %>%
+  filter(ride_length_minutes>0) %>%
+  group_by(member_casual) %>%
+  summarise(
+    mean_ride_length_minutes = mean(ride_length_minutes),
+    median_ride_length_minutes = median(ride_length_minutes),
+    min_ride_length_seconds = min(ride_length_minutes)*60,
+    max_ride_length_hours = max(ride_length_minutes)/60
+  )
+```
+
+We have observed that casual users tend to have rides that last twice as long on average compared to members. Furthermore, while the longest ride by a member was 25 hours, we have identified a casual user with a ride lasting over 7 days. Next, we will examine the breakdown of ride duration by day.
+
+```{r mean_ride_time_by_weekday, message=FALSE, warning=FALSE}
+all_trips_v6 %>%
+  group_by(member_casual, day_of_week) %>%
+  summarise(mean_ride_length_minutes = mean(ride_length_minutes)) %>%
+  arrange(member_casual, day_of_week)
+```
+
+We see that for both members and casual users Saturday and Sunday have the longest rides on average. Let's see the frequency of rides over this period.
+
+```{r mean_ride_freq__mean_ride_length_by_day, message=FALSE, warning=FALSE}
+#Let's analyze ridership data by type and weekday
+all_trips_v6 %>%
+  group_by(member_casual, day_of_week) %>%
+  summarise(
+    mean_ride_length_minutes = mean(ride_length_minutes),
+    number_of_rides = n()) %>%
+  arrange(member_casual, day_of_week)
+```
+
+We observed that there are some differences in the behavior of casual and member users on weekends. Specifically for casual users, on Saturday and Sunday the number of rides tends to be higher and the average ride time is longer. On the other hand, for members, the number of rides decreases over the weekend, but the average ride duration increases. This pattern could suggest that members use the ride service less frequently on weekends, but when they do use it, they tend to take more leisurely rides. Additionally, our analysis shows that members use our service more during the weekdays for shorter periods of time.
+
+```{r freq_mean_ride_started_at_hour_comparison, eval=FALSE, message=FALSE, include=FALSE}
+#Let's analyze ridership data by type, weekday, and phase of day
+#Might be better as a graph
+all_trips_v6 %>%
+  group_by(member_casual, started_at_hour) %>%
+  summarise(
+    mean_ride_length_minutes = mean(ride_length_minutes),
+    number_of_rides = n()) %>%
+  arrange(member_casual, started_at_hour)
+```
+
+### Distance Summary
+
+```{r summarise_ride_distance_by_member_casual, warning=FALSE}
+#Let's take a look at these values by comparing members vs casual users
+all_trips_v6 %>%
+  filter(ride_distance_miles>0) %>%
+  group_by(member_casual) %>%
+  summarise(
+    mean_ride_distance_miles = mean(ride_distance_miles),
+    median_ride_distance_miles = median(ride_distance_miles),
+    min_ride_distance_miles = min(ride_distance_miles),
+    max_ride_distance_miles = max(ride_distance_miles)
+  )
+```
+
+Although there is a difference in the time spent on rides, it appears that member and casual users exhibit similar behavior in terms of distance traveled.
+
+## Bike Type Summary
+
+```{r summarise_rideable}
+all_trips_v6 %>%
+  group_by(member_casual, rideable_type) %>%
+  summarise(
+    number_of_rides = n(),
+    mean_ride_length_minutes = mean(ride_length_minutes),
+    mean_ride_distance_miles = mean(ride_distance_miles)
+  )
+```
+
+Based on the data presented in the table, casual users display a mild inclination towards classic bikes, whereas member users exhibit a stronger preference for classic bikes over electric bikes. It is noteworthy that both user groups tend to spend more time on classic bikes than electric bikes, although this could be attributed to the fact that electric bikes can attain higher speeds with less effort. Additionally, it appears that both casual and member users tend to travel farther on average when using electric bikes compared to classic bikes.
+
+*Summary*
+
+During the analysis portion of the report, we compared the number of rides taken by members and casual users and computed some summary statistics. We observed that casual users tend to have longer rides on average compared to members, and there are some differences in the behavior of casual and member users on weekends. We also noted that members use the service more during weekdays for shorter periods of time, and both user groups tend to spend more time on classic bikes than electric bikes. Additionally, we found that both casual and member users tend to travel farther on average when using electric bikes compared to classic bikes. In the following section, we have included visualizations to help illustrate some of our findings.
+
+```{r remove_old_df_b/c_of_memory_usage_issues, message=FALSE, warning=FALSE, include=FALSE}
+rm(list=c("all_trips", "all_trips_v2", "all_trips_v3", "all_trips_v4", "all_trips_v5"))
+gc()
+```
+
+
+# Share
+
+Now that we have gained some insights, I would like to present our findings to you and provide visualizations to help tell the story of the data. As a junior data analyst, it is important to provide clear and concise insights to our stakeholders to help them make informed decisions. Therefore, I have prepared some visuals that will help us better understand the trends and patterns in the data.
+
+```{r theme_colors}
+#Set graph colors
+theme_colors = c("#4095A5", "plum2")
+```
+
+```{r Increased_Ride_Usage_among_members_during_weekdays, message=FALSE, warning=FALSE}
+all_trips_v6 %>% 
+  group_by(member_casual, day_of_week) %>% 
+  summarise(number_of_rides = n()) %>% 
+  arrange(member_casual, day_of_week)  %>%
+  ggplot(aes(x = day_of_week, y = number_of_rides, fill = member_casual)) +
+  geom_col(position = "dodge") + #'dodge'  positions the columns adjacent to each other rather than stacked
+  labs(title = "Increased Ride Usage Among Member Customers During Weekdays",
+       subtitle = "Number of Rides by Weekday", 
+       x = "Weekday", y = "Number of Rides", 
+       fill = "Customer Type"
+       ) +
+  scale_y_continuous(labels = scales::comma_format()) +
+  scale_fill_manual(values = theme_colors)
+```
+
+Here we present a detailed analysis of our customers' frequency of usage based on the day of the week. Our findings reveal that members use our service considerably more on weekdays, whereas the service usage is evenly distributed between member and casual users on weekends. Moving forward, we will delve deeper into the hourly usage pattern for each day of the week.
+
+```{r dual_peaks_in_rides_during_weekdays, message=FALSE}
+all_trips_v6 %>%
+  group_by(member_casual, day_of_week, started_at_hour) %>%
+  summarise(number_of_rides = n()) %>%
+  ggplot(aes(x = started_at_hour, y = number_of_rides, fill = member_casual)) +
+  geom_area(position = "stack") +
+  facet_wrap(~day_of_week, ncol = 4, scales = "free_x") +
+  labs(title = "Dual Peaks in Rides during Weekdays",
+       subtitle = "Breakdown of Rides by Hour", 
+       x = "Hour of Day", 
+       y = "Number of Rides", 
+       fill = "Customer Type") +
+  scale_x_continuous(breaks = seq(0,23, by=4)) +
+  scale_y_continuous(labels = scales::comma_format()) +
+  scale_fill_manual(values = theme_colors)
+```
+
+In the analysis of the hourly usage patterns by day of the week, it was observed that both user groups exhibit a dual-peaked trend during the weekdays with peak usage times between 6-8 AM and 16-18 (4-6 PM). On the weekends, the hourly usage patterns are observed to be more evenly distributed throughout the day. Next, let's explore the difference in ride durations.
+
+```{r message=FALSE}
+all_trips_v6 %>%
+  group_by(member_casual, day_of_week) %>% 
+  summarise(number_of_rides = dplyr::n(),
+            mean_ride_length_minutes = mean(ride_length_minutes)) %>% 
+  arrange(member_casual, day_of_week) %>%
+  ggplot(aes(x = day_of_week, y = mean_ride_length_minutes, fill = member_casual)) +
+  geom_col(position = "dodge") +
+  labs(title = "Casual Customers Ride Nearly Twice as Long as Annual Members",
+       subtitle = "Average Ride Duration by Weekday", 
+       x = "Weekday", y = "Number of Rides", 
+       fill = "Customer Type"
+       ) +
+  scale_y_continuous(labels = scales::comma_format())+
+  scale_fill_manual(values = theme_colors)
+```
+
+We can see that casual riders have an average ride duration that is nearly twice as long as that of members. Now, let's take a closer look and examine how the ride durations vary by hour.
+
+```{r Average Hourly Ride Duration, message=FALSE}
+all_trips_v6 %>%
+  group_by(member_casual, started_at_hour, day_of_week) %>%
+  summarise(average_duration = mean(ride_length_minutes)) %>%
+  ggplot(aes(x = started_at_hour, y = average_duration, fill = member_casual)) +
+  geom_area(position = "stack") +
+  facet_wrap(~day_of_week, ncol = 4, scales = "free_x") + 
+  labs(title = "Casual Customer Rides Decrease between 3-10 AM",
+       subtitle = "Average Hourly Ride Duration",
+       x = "Hour of Day", 
+       y = "Average Duration (in mins)",
+       fill = "Customer Type") +
+  scale_fill_manual(values = theme_colors)
+```
+
+Based on the information given, we can pull the following insights:
+
+1.  Casual riders tend to have shorter average ride lengths between 3-10 AM.
+
+2.  On weekends, casual riders tend to have slightly longer rides compared to weekdays.
+
+We believe this decrease in ride length could indicate that some casual users are already using our services to commute, as the shorter rides during early morning hours may suggest a pattern of commuting behavior. Additionally, the difference in ride length between casual riders on weekends and weekdays may suggest that bike-sharing is more popular as a leisure activity on weekends or could be a factor of tourism. To investigate that hypothesis further, we will now analyze the start and end stations that are most frequently used by our customers.
+
+```{r Top 10 Start Stations, message=FALSE, warning=FALSE}
+# Top 10 Start Stations by Member_Casual
+all_trips_v6 %>%
+  group_by(member_casual, start_station_name) %>%
+  summarise(number_of_rides = n()) %>%
+  arrange(member_casual, desc(number_of_rides)) %>%
+  top_n(10) %>%
+  mutate(start_station_name = factor(start_station_name),
+         start_station_name = reorder_within(start_station_name, number_of_rides, member_casual)) %>%
+ggplot(start_stations, aes(x = number_of_rides, y =  start_station_name, fill = member_casual)) +
+  geom_col() +
+  facet_grid(member_casual ~ ., scales = "free_y", switch = "y") +
+  scale_y_reordered()+
+  labs(title = "Casual Customer Heavily Prefer Navy Pier Bike Station",
+       subtitle = "Top 10 Start Stations by Customer Type",
+       x = "Number of Rides",
+       y = "",
+       fill = "Customer Type") +
+  scale_fill_manual(values = theme_colors)
+```
+
+```{r Top 10 End Stations,message=FALSE}
+# Top 10 End Stations by Member_Casual
+all_trips_v6 %>%
+  group_by(member_casual, end_station_name) %>%
+  summarise(number_of_rides = n()) %>%
+  arrange(member_casual, desc(number_of_rides)) %>%
+  top_n(10) %>%
+  mutate(end_station_name = factor(end_station_name),
+         end_station_name = reorder_within(end_station_name, number_of_rides, member_casual)) %>%
+ggplot(end_stations, aes(x = number_of_rides, y =  end_station_name, fill = member_casual)) +
+  geom_col() +
+  facet_grid(member_casual ~ ., scales = "free_y", switch = "y") +
+  scale_y_reordered()+
+  labs(title = "Navy Pier Remains the Most Popular Station",
+       subtitle = "Top 10 End Stations by Customer Type",
+       x = "Number of Rides",
+       y = "",
+       fill = "Customer Type") +
+  scale_fill_manual(values = theme_colors)
+```
+
+Based on the graphs we have examined, it appears that the station located at `Streeter Dr & Grand Ave`, situated on Navy Pier, a renowned tourist attraction, is the most frequently used one.
+
+```{r eval=FALSE, message=FALSE, include=FALSE}
+#This would be better as a viz
+#We want to add weekday to this
+all_trips_v6 %>%
+  group_by(member_casual, rideable_type) %>%
+  summarise(
+    number_of_rides = n(),
+    mean_ride_length_minutes = mean(ride_length_minutes),
+    mean_ride_distance_miles = mean(ride_distance_miles)
+  ) %>%
+  ggplot(aes(rideable_type, number_of_rides, fill=member_casual)) +
+  geom_col(position="dodge")+
+  scale_y_continuous()+
+  scale_fill_manual(values = theme_colors)
+```
+
+# Act
+
+1)  Offer promotions during peak usage hours, such as discounted rates for members.
+
+Based on our findings, we observed that casual and members customers both have peaks in usage during weekdays around the morning and evening. By targeting these high-traffic times and providing incentives for membership, we can potentially increase our number of members.
+
+2)  Implement a targeted digital marketing campaign to convert casual customers who use the service for decreased ride times between 3-10 AM.
+
+The campaign would focus on customers who have shorter ride times between 3-10 AM, as this could indicate a pattern of commuting behavior. By identifying these customers through further clustering analysis, we could target them with incentives to become annual members. This would require collecting customer data such as customer IDs to accurately track riding habits and ensure that the marketing campaign is reaching the right audience.
+
+3)  Consider planning specialized services or events for members during weekends, such as guided tours or group rides, to encourage more member customers to use our service for leisure.
+
+Our analysis found that member customers had a decrease in the number of rides but an increase in ride times on weekends. By adding member-only events, we could encourage member customers to ride more on weekends as well as entice casual riders to become members to access these events. Furthermore, since our analysis found that Navy Pier is the most popular station among casual customers, creating events that start and end at Navy Pier could increase our appeal to tourists and draw in more casual riders.
+
+# Conclusion
+
+In conclusion, our analysis of bike-share usage in Chicago reveals interesting insights into the behavior of our customers. Members tend to use our service primarily for commuting purposes during the weekdays, while casual riders use the service for leisure or tourism. On weekends, we observe increased usage by both member and casual riders, suggesting that bike-sharing is a popular leisure activity during this time.
+
+Additionally, we found that the most popular start and end station is located on Navy Pier, a well-known tourist destination. This information could be useful for future business planning, decision making, and targeted marketing efforts.
+
+To maintain the integrity of our analysis and enable further exploration, we are saving the cleaned data used in this report as a CSV file. This will allow us to easily import the data into other tools for further analysis and insights.
+
+```{r write_to_csv}
+#STEP 5: Export a summary file
+to_csv <- all_trips_v6
+
+if (!dir.exists("processed_csv")) {
+  dir.create("processed_csv")
+}
+write_csv(to_csv , file = paste0(getwd(), "/processed_csv/customer_data_cleaned.csv"))
+```
