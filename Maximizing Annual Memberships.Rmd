@@ -7,8 +7,6 @@ output:
     keep_md: true
 ---
 
-`options(warn=2, error=recover)`
-
 # Introduction
 
 The goal of this case study is to offer a thorough analysis of Cyclistic, a fictional bike-share provider in Chicago. This project's main objectives are to examine the usage differences between annual members and casual riders and to identify the variables that lead casual riders to switch to annual membership. To achieve this goal, we will use the six stages of the data analysis process --- "ask, prepare, process, analyze, share, and act".
@@ -21,7 +19,7 @@ The Cyclistic marketing analytics team aims to identify differences in usage pat
 
 To complete this objective we used RStudio to import, clean, analyze and visualize the data. We analyzed Cyclistic trip data from the past 12 months (April 2022 - March 2023). The data, consisting of 12 CSV files, includes variables such as start and end times, station locations, bike type, and customer type. We obtained the data from <a href="https://divvy-tripdata.s3.amazonaws.com/index.html">the Divvy Tripdata website</a>, which is a reliable source, and downloaded it to the directory "\~/Google Capstone Project/csv". The data can be trusted as it is accurate, complete, and unbiased. We accessed it through a <a href="https://ride.divvybikes.com/data-license-agreement">licensed agreement</a> with Lyft Bikes and Scooters, LLC, ensuring that licensing, privacy, security, and accessibility concerns were addressed. We verified the integrity of the data by checking for consistency and minimal missing values.
 
-The Cyclistic trip data allows us to identify differences in customer behavior and will help us answer our research question. However, the size of the data is a challenge as it significantly increases memory usage in RStudio. Based on our analysis, we recommend using a machine with at least 16 GB of RAM to efficiently replicate our results. A detailed data dictionary is provided below.
+The Cyclistic trip data was used to analyze and compare patterns of behavior among customers based on how they use the rides differently. By examining these differences, we were able to identify distinctions in customer behavior. However, the size of the data presented a challenge as it significantly increases memory usage in RStudio. Based on our analysis, we recommend using a machine with at least 16 GB of RAM to efficiently replicate our results. A detailed data dictionary is provided below.
 
 ## Data Dictionary
 
@@ -45,6 +43,8 @@ The Cyclistic trip data allows us to identify differences in customer behavior a
     -   member: Customer of this ride has purchased an annual membership
 
 ## File descriptions
+
+
 
 ```{r file_names, echo=FALSE}
 path <- "~\\Google Capstone Project\\csv\\"
@@ -770,5 +770,5 @@ to_csv <- all_trips_v6
 if (!dir.exists("processed_csv")) {
   dir.create("processed_csv")
 }
-write_csv(to_csv , file = paste0(getwd(), "/processed_csv/customer_data_cleaned.csv"))
+write_csv(to_csv , file = paste0(getwd(), "/processed_csv/trip_data_cleaned.csv"))
 ```
