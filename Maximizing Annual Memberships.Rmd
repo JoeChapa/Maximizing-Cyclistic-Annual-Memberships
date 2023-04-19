@@ -683,13 +683,14 @@ We believe this decrease in ride length could indicate that some casual users ar
 
 ```{r Top 10 Start Stations, message=FALSE, warning=FALSE}
 # Top 10 Start Stations by Member_Casual
-all_trips_v6 %>%
+start_stations <- all_trips_v6 %>%
   group_by(member_casual, start_station_name) %>%
   summarise(number_of_rides = n()) %>%
   arrange(member_casual, desc(number_of_rides)) %>%
   top_n(10) %>%
   mutate(start_station_name = factor(start_station_name),
-         start_station_name = reorder_within(start_station_name, number_of_rides, member_casual)) %>%
+         start_station_name = reorder_within(start_station_name, number_of_rides, member_casual))
+
 ggplot(start_stations, aes(x = number_of_rides, y =  start_station_name, fill = member_casual)) +
   geom_col() +
   facet_grid(member_casual ~ ., scales = "free_y", switch = "y") +
@@ -704,13 +705,14 @@ ggplot(start_stations, aes(x = number_of_rides, y =  start_station_name, fill = 
 
 ```{r Top 10 End Stations,message=FALSE}
 # Top 10 End Stations by Member_Casual
-all_trips_v6 %>%
+end_stations <- all_trips_v6 %>%
   group_by(member_casual, end_station_name) %>%
   summarise(number_of_rides = n()) %>%
   arrange(member_casual, desc(number_of_rides)) %>%
   top_n(10) %>%
   mutate(end_station_name = factor(end_station_name),
-         end_station_name = reorder_within(end_station_name, number_of_rides, member_casual)) %>%
+         end_station_name = reorder_within(end_station_name, number_of_rides, member_casual))
+
 ggplot(end_stations, aes(x = number_of_rides, y =  end_station_name, fill = member_casual)) +
   geom_col() +
   facet_grid(member_casual ~ ., scales = "free_y", switch = "y") +
@@ -764,7 +766,6 @@ Additionally, we found that the most popular start and end station is located on
 To maintain the integrity of our analysis and enable further exploration, we are saving the cleaned data used in this report as a CSV file. This will allow us to easily import the data into other tools for further analysis and insights.
 
 ```{r write_to_csv}
-#STEP 5: Export a summary file
 to_csv <- all_trips_v6
 
 if (!dir.exists("processed_csv")) {
