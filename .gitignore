@@ -3,7 +3,13 @@
 .RData
 .Ruserdata
 Google Capstone Project.Rproj
-Maximizing-Annual-Memberships*.*
 csv/
+processed_csv/
 Maximizing-Annual-Memberships_files
 Maximizing-Annual-Memberships_cache
+main.R
+Maximizing-Annual-Memberships.log
+Maximizing-Annual-Memberships.md
+Maximizing-Annual-Memberships.tex
+test.Rmd
+test.html
