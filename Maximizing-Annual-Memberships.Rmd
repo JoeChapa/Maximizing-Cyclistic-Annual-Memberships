@@ -3,7 +3,7 @@ title: "Maximizing Annual Memberships in Cyclistic Bike-Share Program: A Compara
 author: "Joe Chapa"
 date: "2023-03-30"
 output:
-  html_document:
+  pdf_document:
     keep_md: true
 ---
 
